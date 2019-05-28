@@ -1,19 +1,25 @@
 // See the file "COPYING" in the main distribution directory for copyright.
 
-#include "bro-config.h"
+#include "zeek-config.h"
 
 #include "Var.h"
 #include "Func.h"
 #include "Stmt.h"
 #include "Scope.h"
 #include "Serializer.h"
-#include "RemoteSerializer.h"
 #include "EventRegistry.h"
 #include "Traverse.h"
 
 static Val* init_val(Expr* init, const BroType* t, Val* aggr)
 	{
-	return init->InitVal(t, aggr);
+	try
+		{
+		return init->InitVal(t, aggr);
+		}
+	catch ( InterpreterException& e )
+		{
+		return nullptr;
+		}
 	}
 
 static void make_var(ID* id, BroType* t, init_class c, Expr* init,
@@ -133,26 +139,6 @@ static void make_var(ID* id, BroType* t, init_class c, Expr* init,
 		default:
 			break;
 		}
-		}
-
-	if ( id->FindAttr(ATTR_PERSISTENT) || id->FindAttr(ATTR_SYNCHRONIZED) )
-		{
-		if ( dt == VAR_CONST )
-			{
-			id->Error("&persistent/synchronized with constant");
-			return;
-			}
-		else if ( dt == VAR_OPTION )
-			{
-			id->Error("&persistent/synchronized with option");
-			return;
-			}
-
-		if ( ! id->IsGlobal() )
-			{
-			id->Error("&persistant/synchronized with non-global");
-			return;
-			}
 		}
 
 	if ( do_init )
@@ -318,8 +304,7 @@ static void transfer_arg_defaults(RecordType* args, RecordType* recv)
 
 		if ( ! recv_i->attrs )
 			{
-			attr_list* a = new attr_list();
-			a->append(def);
+			attr_list* a = new attr_list{def};
 			recv_i->attrs = new Attributes(a, recv_i->type, true);
 			}
 

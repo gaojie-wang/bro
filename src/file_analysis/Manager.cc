@@ -10,6 +10,7 @@
 #include "Var.h"
 #include "Event.h"
 #include "UID.h"
+#include "digest.h"
 
 #include "plugin/Manager.h"
 #include "analyzer/Manager.h"
@@ -93,7 +94,7 @@ string Manager::HashHandle(const string& handle) const
 	uint64 hash[2];
 	string msg(handle + salt);
 
-	MD5(reinterpret_cast<const u_char*>(msg.data()), msg.size(),
+	internal_md5(reinterpret_cast<const u_char*>(msg.data()), msg.size(),
 	    reinterpret_cast<u_char*>(hash));
 
 	return Bro::UID(bits_per_uid, hash, 2).Base62("F");
@@ -442,12 +443,11 @@ string Manager::GetFileID(analyzer::Tag tag, Connection* c, bool is_orig)
 	EnumVal* tagval = tag.AsEnumVal();
 	Ref(tagval);
 
-	val_list* vl = new val_list();
-	vl->append(tagval);
-	vl->append(c->BuildConnVal());
-	vl->append(val_mgr->GetBool(is_orig));
-
-	mgr.QueueEvent(get_file_handle, vl);
+	mgr.QueueEventFast(get_file_handle, {
+		tagval,
+		c->BuildConnVal(),
+		val_mgr->GetBool(is_orig),
+	});
 	mgr.Drain(); // need file handle immediately so we don't have to buffer data
 	return current_file_id;
 	}

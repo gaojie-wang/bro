@@ -1,6 +1,6 @@
 // See the file "COPYING" in the main distribution directory for copyright.
 
-#include "bro-config.h"
+#include "zeek-config.h"
 
 #include "Type.h"
 #include "Attr.h"
@@ -8,8 +8,8 @@
 #include "Scope.h"
 #include "Serializer.h"
 #include "Reporter.h"
-#include "broxygen/Manager.h"
-#include "broxygen/utils.h"
+#include "zeekygen/Manager.h"
+#include "zeekygen/utils.h"
 
 #include <string>
 #include <list>
@@ -190,7 +190,7 @@ void BroType::Describe(ODesc* d) const
 
 void BroType::DescribeReST(ODesc* d, bool roles_only) const
 	{
-	d->Add(fmt(":bro:type:`%s`", type_name(Tag())));
+	d->Add(fmt(":zeek:type:`%s`", type_name(Tag())));
 	}
 
 void BroType::SetError()
@@ -478,7 +478,7 @@ void IndexType::Describe(ODesc* d) const
 
 void IndexType::DescribeReST(ODesc* d, bool roles_only) const
 	{
-	d->Add(":bro:type:`");
+	d->Add(":zeek:type:`");
 
 	if ( IsSet() )
 		d->Add("set");
@@ -497,7 +497,7 @@ void IndexType::DescribeReST(ODesc* d, bool roles_only) const
 
 		if ( ! t->GetName().empty() )
 			{
-			d->Add(":bro:type:`");
+			d->Add(":zeek:type:`");
 			d->Add(t->GetName());
 			d->Add("`");
 			}
@@ -513,7 +513,7 @@ void IndexType::DescribeReST(ODesc* d, bool roles_only) const
 
 		if ( ! yield_type->GetName().empty() )
 			{
-			d->Add(":bro:type:`");
+			d->Add(":zeek:type:`");
 			d->Add(yield_type->GetName());
 			d->Add("`");
 			}
@@ -800,7 +800,7 @@ void FuncType::Describe(ODesc* d) const
 
 void FuncType::DescribeReST(ODesc* d, bool roles_only) const
 	{
-	d->Add(":bro:type:`");
+	d->Add(":zeek:type:`");
 	d->Add(FlavorString());
 	d->Add("`");
 	d->Add(" (");
@@ -813,7 +813,7 @@ void FuncType::DescribeReST(ODesc* d, bool roles_only) const
 
 		if ( ! yield->GetName().empty() )
 			{
-			d->Add(":bro:type:`");
+			d->Add(":zeek:type:`");
 			d->Add(yield->GetName());
 			d->Add("`");
 			}
@@ -957,7 +957,7 @@ void TypeDecl::DescribeReST(ODesc* d, bool roles_only) const
 
 	if ( ! type->GetName().empty() )
 		{
-		d->Add(":bro:type:`");
+		d->Add(":zeek:type:`");
 		d->Add(type->GetName());
 		d->Add("`");
 		}
@@ -1073,7 +1073,7 @@ void RecordType::Describe(ODesc* d) const
 void RecordType::DescribeReST(ODesc* d, bool roles_only) const
 	{
 	d->PushType(this);
-	d->Add(":bro:type:`record`");
+	d->Add(":zeek:type:`record`");
 
 	if ( num_fields == 0 )
 		return;
@@ -1197,8 +1197,8 @@ void RecordType::DescribeFieldsReST(ODesc* d, bool func_args) const
 		if ( func_args )
 			continue;
 
-		using broxygen::IdentifierInfo;
-		IdentifierInfo* doc = broxygen_mgr->GetIdentifierInfo(GetName());
+		using zeekygen::IdentifierInfo;
+		IdentifierInfo* doc = zeekygen_mgr->GetIdentifierInfo(GetName());
 
 		if ( ! doc )
 			{
@@ -1217,7 +1217,7 @@ void RecordType::DescribeFieldsReST(ODesc* d, bool func_args) const
 		     field_from_script != type_from_script )
 			{
 			d->PushIndent();
-			d->Add(broxygen::redef_indication(field_from_script).c_str());
+			d->Add(zeekygen::redef_indication(field_from_script).c_str());
 			d->PopIndent();
 			}
 
@@ -1237,7 +1237,7 @@ void RecordType::DescribeFieldsReST(ODesc* d, bool func_args) const
 				{
 				string s = cmnts[i];
 
-				if ( broxygen::prettify_params(s) )
+				if ( zeekygen::prettify_params(s) )
 					d->NL();
 
 				d->Add(s.c_str());
@@ -1405,7 +1405,7 @@ void OpaqueType::Describe(ODesc* d) const
 
 void OpaqueType::DescribeReST(ODesc* d, bool roles_only) const
 	{
-	d->Add(fmt(":bro:type:`%s` of %s", type_name(Tag()), name.c_str()));
+	d->Add(fmt(":zeek:type:`%s` of %s", type_name(Tag()), name.c_str()));
 	}
 
 IMPLEMENT_SERIAL(OpaqueType, SER_OPAQUE_TYPE);
@@ -1505,12 +1505,12 @@ void EnumType::CheckAndAddName(const string& module_name, const char* name,
 		if ( deprecated )
 			id->MakeDeprecated();
 
-		broxygen_mgr->Identifier(id);
+		zeekygen_mgr->Identifier(id);
 		}
 	else
 		{
 		// We allow double-definitions if matching exactly. This is so that
-		// we can define an enum both in a *.bif and *.bro for avoiding
+		// we can define an enum both in a *.bif and *.zeek for avoiding
 		// cyclic dependencies.
 		string fullname = make_full_var_name(module_name.c_str(), name);
 		if ( id->Name() != fullname
@@ -1597,7 +1597,7 @@ EnumVal* EnumType::GetVal(bro_int_t i)
 
 void EnumType::DescribeReST(ODesc* d, bool roles_only) const
 	{
-	d->Add(":bro:type:`enum`");
+	d->Add(":zeek:type:`enum`");
 
 	// Create temporary, reverse name map so that enums can be documented
 	// in ascending order of their actual integral value instead of by name.
@@ -1614,12 +1614,12 @@ void EnumType::DescribeReST(ODesc* d, bool roles_only) const
 		d->PushIndent();
 
 		if ( roles_only )
-			d->Add(fmt(":bro:enum:`%s`", it->second.c_str()));
+			d->Add(fmt(":zeek:enum:`%s`", it->second.c_str()));
 		else
-			d->Add(fmt(".. bro:enum:: %s %s", it->second.c_str(), GetName().c_str()));
+			d->Add(fmt(".. zeek:enum:: %s %s", it->second.c_str(), GetName().c_str()));
 
-		using broxygen::IdentifierInfo;
-		IdentifierInfo* doc = broxygen_mgr->GetIdentifierInfo(it->second);
+		using zeekygen::IdentifierInfo;
+		IdentifierInfo* doc = zeekygen_mgr->GetIdentifierInfo(it->second);
 
 		if ( ! doc )
 			{
@@ -1634,7 +1634,7 @@ void EnumType::DescribeReST(ODesc* d, bool roles_only) const
 		if ( doc->GetDeclaringScript() )
 			enum_from_script = doc->GetDeclaringScript()->Name();
 
-		IdentifierInfo* type_doc = broxygen_mgr->GetIdentifierInfo(GetName());
+		IdentifierInfo* type_doc = zeekygen_mgr->GetIdentifierInfo(GetName());
 
 		if ( type_doc && type_doc->GetDeclaringScript() )
 			type_from_script = type_doc->GetDeclaringScript()->Name();
@@ -1644,7 +1644,7 @@ void EnumType::DescribeReST(ODesc* d, bool roles_only) const
 			{
 			d->NL();
 			d->PushIndent();
-			d->Add(broxygen::redef_indication(enum_from_script).c_str());
+			d->Add(zeekygen::redef_indication(enum_from_script).c_str());
 			d->PopIndent();
 			}
 
@@ -1714,7 +1714,12 @@ bool EnumType::DoUnserialize(UnserialInfo* info)
 
 		names[name] = val;
 		delete [] name; // names[name] converts to std::string
-		vals[val] = new EnumVal(this, val);
+		// note: the 'vals' map gets populated lazily, which works fine and
+		// also happens to avoid a leak due to circular reference between the
+		// types and vals (there's a special case for unserializing a known
+		// type that will unserialze and then immediately want to unref the
+		// type if we already have it, except that won't delete it as intended
+		// if we've already created circular references to it here).
 		}
 
 	return true;
@@ -1813,12 +1818,12 @@ void VectorType::Describe(ODesc* d) const
 
 void VectorType::DescribeReST(ODesc* d, bool roles_only) const
 	{
-	d->Add(fmt(":bro:type:`%s` of ", type_name(Tag())));
+	d->Add(fmt(":zeek:type:`%s` of ", type_name(Tag())));
 
 	if ( yield_type->GetName().empty() )
 		yield_type->DescribeReST(d, roles_only);
 	else
-		d->Add(fmt(":bro:type:`%s`", yield_type->GetName().c_str()));
+		d->Add(fmt(":zeek:type:`%s`", yield_type->GetName().c_str()));
 	}
 
 BroType* base_type_no_ref(TypeTag tag)
@@ -2261,7 +2266,7 @@ BroType* merge_types(const BroType* t1, const BroType* t2)
 		if ( rt1->NumFields() != rt2->NumFields() )
 			return 0;
 
-		type_decl_list* tdl3 = new type_decl_list;
+		type_decl_list* tdl3 = new type_decl_list(rt1->NumFields());
 
 		for ( int i = 0; i < rt1->NumFields(); ++i )
 			{

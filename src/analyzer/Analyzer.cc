@@ -223,7 +223,7 @@ void Analyzer::NextPacket(int len, const u_char* data, bool is_orig, uint64 seq,
 			}
 		catch ( binpac::Exception const &e )
 			{
-			Weird(e.c_msg());
+			ProtocolViolation(fmt("Binpac exception: %s", e.c_msg()));
 			}
 		}
 	}
@@ -246,7 +246,7 @@ void Analyzer::NextStream(int len, const u_char* data, bool is_orig)
 			}
 		catch ( binpac::Exception const &e )
 			{
-			Weird(e.c_msg());
+			ProtocolViolation(fmt("Binpac exception: %s", e.c_msg()));
 			}
 		}
 	}
@@ -269,7 +269,7 @@ void Analyzer::NextUndelivered(uint64 seq, int len, bool is_orig)
 			}
 		catch ( binpac::Exception const &e )
 			{
-			Weird(e.c_msg());
+			ProtocolViolation(fmt("Binpac exception: %s", e.c_msg()));
 			}
 		}
 	}
@@ -662,20 +662,26 @@ void Analyzer::ProtocolConfirmation(Tag arg_tag)
 	if ( protocol_confirmed )
 		return;
 
+	protocol_confirmed = true;
+
+	if ( ! protocol_confirmation )
+		return;
+
 	EnumVal* tval = arg_tag ? arg_tag.AsEnumVal() : tag.AsEnumVal();
 	Ref(tval);
 
-	val_list* vl = new val_list;
-	vl->append(BuildConnVal());
-	vl->append(tval);
-	vl->append(val_mgr->GetCount(id));
-	mgr.QueueEvent(protocol_confirmation, vl);
-
-	protocol_confirmed = true;
+	mgr.QueueEventFast(protocol_confirmation, {
+		BuildConnVal(),
+		tval,
+		val_mgr->GetCount(id),
+	});
 	}
 
 void Analyzer::ProtocolViolation(const char* reason, const char* data, int len)
 	{
+	if ( ! protocol_violation )
+		return;
+
 	StringVal* r;
 
 	if ( data && len )
@@ -692,12 +698,12 @@ void Analyzer::ProtocolViolation(const char* reason, const char* data, int len)
 	EnumVal* tval = tag.AsEnumVal();
 	Ref(tval);
 
-	val_list* vl = new val_list;
-	vl->append(BuildConnVal());
-	vl->append(tval);
-	vl->append(val_mgr->GetCount(id));
-	vl->append(r);
-	mgr.QueueEvent(protocol_violation, vl);
+	mgr.QueueEventFast(protocol_violation, {
+		BuildConnVal(),
+		tval,
+		val_mgr->GetCount(id),
+		r,
+	});
 	}
 
 void Analyzer::AddTimer(analyzer_timer_func timer, double t,
@@ -780,6 +786,16 @@ void Analyzer::Event(EventHandlerPtr f, Val* v1, Val* v2)
 void Analyzer::ConnectionEvent(EventHandlerPtr f, val_list* vl)
 	{
 	conn->ConnectionEvent(f, this, vl);
+	}
+
+void Analyzer::ConnectionEvent(EventHandlerPtr f, val_list vl)
+	{
+	conn->ConnectionEvent(f, this, std::move(vl));
+	}
+
+void Analyzer::ConnectionEventFast(EventHandlerPtr f, val_list vl)
+	{
+	conn->ConnectionEventFast(f, this, std::move(vl));
 	}
 
 void Analyzer::Weird(const char* name, const char* addl)

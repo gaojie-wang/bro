@@ -5,7 +5,7 @@
 // Switching parser table type fixes ambiguity problems.
 %define lr.type ielr
 
-%expect 141
+%expect 103
 
 %token TOK_ADD TOK_ADD_TO TOK_ADDR TOK_ANY
 %token TOK_ATENDIF TOK_ATELSE TOK_ATIF TOK_ATIFDEF TOK_ATIFNDEF
@@ -21,12 +21,10 @@
 %token TOK_TIME TOK_TIMEOUT TOK_TIMER TOK_TYPE TOK_UNION TOK_VECTOR TOK_WHEN
 %token TOK_WHILE TOK_AS TOK_IS
 
-%token TOK_ATTR_ADD_FUNC TOK_ATTR_ENCRYPT TOK_ATTR_DEFAULT
-%token TOK_ATTR_OPTIONAL TOK_ATTR_REDEF TOK_ATTR_ROTATE_INTERVAL
-%token TOK_ATTR_ROTATE_SIZE TOK_ATTR_DEL_FUNC TOK_ATTR_EXPIRE_FUNC
+%token TOK_ATTR_ADD_FUNC TOK_ATTR_DEFAULT TOK_ATTR_OPTIONAL TOK_ATTR_REDEF
+%token TOK_ATTR_DEL_FUNC TOK_ATTR_EXPIRE_FUNC
 %token TOK_ATTR_EXPIRE_CREATE TOK_ATTR_EXPIRE_READ TOK_ATTR_EXPIRE_WRITE
-%token TOK_ATTR_PERSISTENT TOK_ATTR_SYNCHRONIZED
-%token TOK_ATTR_RAW_OUTPUT TOK_ATTR_MERGEABLE
+%token TOK_ATTR_RAW_OUTPUT
 %token TOK_ATTR_PRIORITY TOK_ATTR_LOG TOK_ATTR_ERROR_HANDLER
 %token TOK_ATTR_TYPE_COLUMN TOK_ATTR_DEPRECATED
 
@@ -88,12 +86,15 @@
 #include "Scope.h"
 #include "Reporter.h"
 #include "Brofiler.h"
-#include "broxygen/Manager.h"
+#include "zeekygen/Manager.h"
 
 #include <set>
 #include <string>
 
 extern const char* filename;  // Absolute path of file currently being parsed.
+extern const char* last_filename; // Absolute path of last file parsed.
+extern const char* last_tok_filename;
+extern const char* last_last_tok_filename;
 
 YYLTYPE GetCurrentLocation();
 extern int yyerror(const char[]);
@@ -728,7 +729,12 @@ expr:
 	|       '|' expr '|'	%prec '('
 			{
 			set_location(@1, @3);
-			$$ = new SizeExpr($2);
+			auto e = $2;
+
+			if ( IsIntegral(e->Type()->Tag()) )
+				e = new ArithCoerceExpr(e, TYPE_INT);
+
+			$$ = new SizeExpr(e);
 			}
 
 	|       expr TOK_AS type
@@ -1031,7 +1037,7 @@ type_decl:
 			$$ = new TypeDecl($3, $1, $4, (in_record > 0));
 
 			if ( in_record > 0 && cur_decl_type_id )
-				broxygen_mgr->RecordField(cur_decl_type_id, $$, ::filename);
+				zeekygen_mgr->RecordField(cur_decl_type_id, $$, ::filename);
 			}
 	;
 
@@ -1065,7 +1071,7 @@ decl:
 		TOK_MODULE TOK_ID ';'
 			{
 			current_module = $2;
-			broxygen_mgr->ModuleUsage(::filename, current_module);
+			zeekygen_mgr->ModuleUsage(::filename, current_module);
 			}
 
 	|	TOK_EXPORT '{' { is_export = true; } decl_list '}'
@@ -1074,36 +1080,36 @@ decl:
 	|	TOK_GLOBAL def_global_id opt_type init_class opt_init opt_attr ';'
 			{
 			add_global($2, $3, $4, $5, $6, VAR_REGULAR);
-			broxygen_mgr->Identifier($2);
+			zeekygen_mgr->Identifier($2);
 			}
 
 	|	TOK_OPTION def_global_id opt_type init_class opt_init opt_attr ';'
 			{
 			add_global($2, $3, $4, $5, $6, VAR_OPTION);
-			broxygen_mgr->Identifier($2);
+			zeekygen_mgr->Identifier($2);
 			}
 
 	|	TOK_CONST def_global_id opt_type init_class opt_init opt_attr ';'
 			{
 			add_global($2, $3, $4, $5, $6, VAR_CONST);
-			broxygen_mgr->Identifier($2);
+			zeekygen_mgr->Identifier($2);
 			}
 
 	|	TOK_REDEF global_id opt_type init_class opt_init opt_attr ';'
 			{
 			add_global($2, $3, $4, $5, $6, VAR_REDEF);
-			broxygen_mgr->Redef($2, ::filename);
+			zeekygen_mgr->Redef($2, ::filename);
 			}
 
 	|	TOK_REDEF TOK_ENUM global_id TOK_ADD_TO '{'
-			{ parser_redef_enum($3); broxygen_mgr->Redef($3, ::filename); }
+			{ parser_redef_enum($3); zeekygen_mgr->Redef($3, ::filename); }
 		enum_body '}' ';'
 			{
-			// Broxygen already grabbed new enum IDs as the type created them.
+			// Zeekygen already grabbed new enum IDs as the type created them.
 			}
 
 	|	TOK_REDEF TOK_RECORD global_id
-			{ cur_decl_type_id = $3; broxygen_mgr->Redef($3, ::filename); }
+			{ cur_decl_type_id = $3; zeekygen_mgr->Redef($3, ::filename); }
 		TOK_ADD_TO '{'
 			{ ++in_record; }
 		type_decl_list
@@ -1119,12 +1125,12 @@ decl:
 			}
 
 	|	TOK_TYPE global_id ':'
-			{ cur_decl_type_id = $2; broxygen_mgr->StartType($2);  }
+			{ cur_decl_type_id = $2; zeekygen_mgr->StartType($2);  }
 		type opt_attr ';'
 			{
 			cur_decl_type_id = 0;
 			add_type($2, $5, $6);
-			broxygen_mgr->Identifier($2);
+			zeekygen_mgr->Identifier($2);
 			}
 
 	|	func_hdr func_body
@@ -1159,10 +1165,19 @@ func_hdr:
 			begin_func($2, current_module.c_str(),
 				FUNC_FLAVOR_FUNCTION, 0, $3, $4);
 			$$ = $3;
-			broxygen_mgr->Identifier($2);
+			zeekygen_mgr->Identifier($2);
 			}
 	|	TOK_EVENT event_id func_params opt_attr
 			{
+			// Gracefully handle the deprecation of bro_init, bro_done,
+			// and bro_script_loaded
+			if ( streq("bro_init", $2->Name()) )
+				$2 = global_scope()->Lookup("zeek_init");
+			else if ( streq("bro_done", $2->Name()) )
+				$2 = global_scope()->Lookup("zeek_done");
+			else if ( streq("bro_script_loaded", $2->Name()) )
+				$2 = global_scope()->Lookup("zeek_script_loaded");
+
 			begin_func($2, current_module.c_str(),
 				   FUNC_FLAVOR_EVENT, 0, $3, $4);
 			$$ = $3;
@@ -1275,10 +1290,6 @@ attr:
 			{ $$ = new Attr(ATTR_OPTIONAL); }
 	|	TOK_ATTR_REDEF
 			{ $$ = new Attr(ATTR_REDEF); }
-	|	TOK_ATTR_ROTATE_INTERVAL '=' expr
-			{ $$ = new Attr(ATTR_ROTATE_INTERVAL, $3); }
-	|	TOK_ATTR_ROTATE_SIZE '=' expr
-			{ $$ = new Attr(ATTR_ROTATE_SIZE, $3); }
 	|	TOK_ATTR_ADD_FUNC '=' expr
 			{ $$ = new Attr(ATTR_ADD_FUNC, $3); }
 	|	TOK_ATTR_DEL_FUNC '=' expr
@@ -1291,18 +1302,8 @@ attr:
 			{ $$ = new Attr(ATTR_EXPIRE_READ, $3); }
 	|	TOK_ATTR_EXPIRE_WRITE '=' expr
 			{ $$ = new Attr(ATTR_EXPIRE_WRITE, $3); }
-	|	TOK_ATTR_PERSISTENT
-			{ $$ = new Attr(ATTR_PERSISTENT); }
-	|	TOK_ATTR_SYNCHRONIZED
-			{ $$ = new Attr(ATTR_SYNCHRONIZED); }
-	|	TOK_ATTR_ENCRYPT
-			{ $$ = new Attr(ATTR_ENCRYPT); }
-	|	TOK_ATTR_ENCRYPT '=' expr
-			{ $$ = new Attr(ATTR_ENCRYPT, $3); }
 	|	TOK_ATTR_RAW_OUTPUT
 			{ $$ = new Attr(ATTR_RAW_OUTPUT); }
-	|	TOK_ATTR_MERGEABLE
-			{ $$ = new Attr(ATTR_MERGEABLE); }
 	|	TOK_ATTR_PRIORITY '=' expr
 			{ $$ = new Attr(ATTR_PRIORITY, $3); }
 	|	TOK_ATTR_TYPE_COLUMN '=' expr
@@ -1584,7 +1585,7 @@ for_head:
 			if ( loop_var )
 				{
 				if ( loop_var->IsGlobal() )
-					loop_var->Error("global used in for loop");
+					loop_var->Error("global variable used in for loop");
 				}
 
 			else
@@ -1598,8 +1599,62 @@ for_head:
 			}
 	|
 		TOK_FOR '(' '[' local_id_list ']' TOK_IN expr ')'
-			{ $$ = new ForStmt($4, $7); }
-		;
+			{
+			$$ = new ForStmt($4, $7);
+			}
+	|
+		TOK_FOR '(' TOK_ID ',' TOK_ID TOK_IN expr ')'
+			{
+			set_location(@1, @8);
+			const char* module = current_module.c_str();
+
+			// Check for previous definitions of key and
+			// value variables.
+			ID* key_var = lookup_ID($3, module);
+			ID* val_var = lookup_ID($5, module);
+
+			// Validate previous definitions as needed.
+			if ( key_var )
+				{
+				if ( key_var->IsGlobal() )
+					key_var->Error("global variable used in for loop");
+				}
+			else
+				key_var = install_ID($3, module, false, false);
+
+			if ( val_var )
+				{
+				if ( val_var->IsGlobal() )
+					val_var->Error("global variable used in for loop");
+				}
+			else
+				val_var = install_ID($5, module, false, false);
+
+			id_list* loop_vars = new id_list;
+			loop_vars->append(key_var);
+
+			$$ = new ForStmt(loop_vars, $7, val_var);
+			}
+	|
+		TOK_FOR '(' '[' local_id_list ']' ',' TOK_ID TOK_IN expr ')'
+			{
+			set_location(@1, @10);
+			const char* module = current_module.c_str();
+
+			// Validate value variable
+			ID* val_var = lookup_ID($7, module);
+
+			if ( val_var )
+				{
+				if ( val_var->IsGlobal() )
+					val_var->Error("global variable used in for loop");
+				}
+			else
+				val_var = install_ID($7, module, false, false);
+
+			$$ = new ForStmt($4, $9, val_var);
+			}
+	;
 
 local_id_list:
 		local_id_list ',' local_id
@@ -1718,19 +1773,27 @@ opt_deprecated:
 
 int yyerror(const char msg[])
 	{
-	char* msgbuf = new char[strlen(msg) + strlen(last_tok) + 128];
-
-	if ( last_tok[0] == '\n' )
-		sprintf(msgbuf, "%s, on previous line", msg);
-	else if ( last_tok[0] == '\0' )
-		sprintf(msgbuf, "%s, at end of file", msg);
-	else
-		sprintf(msgbuf, "%s, at or near \"%s\"", msg, last_tok);
-
 	if ( in_debug )
 		g_curr_debug_error = copy_string(msg);
 
-	reporter->Error("%s", msgbuf);
+	if ( last_tok[0] == '\n' )
+		reporter->Error("%s, on previous line", msg);
+	else if ( last_tok[0] == '\0' )
+		{
+		if ( last_filename )
+			reporter->Error("%s, at end of file %s", msg, last_filename);
+		else
+			reporter->Error("%s, at end of file", msg);
+		}
+	else
+		{
+		if ( last_last_tok_filename && last_tok_filename &&
+		     ! streq(last_last_tok_filename, last_tok_filename) )
+			reporter->Error("%s, at or near \"%s\" or end of file %s",
+			                msg, last_tok, last_last_tok_filename);
+		else
+			reporter->Error("%s, at or near \"%s\"", msg, last_tok);
+		}
 
 	return 0;
 	}

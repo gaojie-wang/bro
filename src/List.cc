@@ -1,4 +1,4 @@
-#include "bro-config.h"
+#include "zeek-config.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -6,33 +6,29 @@
 #include "List.h"
 #include "util.h"
 
-static const int DEFAULT_CHUNK_SIZE = 10;
+#define DEFAULT_LIST_SIZE 10
+#define GROWTH_FACTOR 2
 
 BaseList::BaseList(int size)
 	{
-	chunk_size = DEFAULT_CHUNK_SIZE;
+	num_entries = 0;
 
-	if ( size < 0 )
+	if ( size <= 0 )
 		{
-		num_entries = max_entries = 0;
+		max_entries = 0;
 		entry = 0;
+		return;
 		}
-	else
-		{
-		if ( size > 0 )
-			chunk_size = size;
 
-		num_entries = 0;
-		entry = (ent *) safe_malloc(chunk_size * sizeof(ent));
-		max_entries = chunk_size;
-		}
+	max_entries = size;
+
+	entry = (ent *) safe_malloc(max_entries * sizeof(ent));
 	}
 
 
-BaseList::BaseList(BaseList& b)
+BaseList::BaseList(const BaseList& b)
 	{
 	max_entries = b.max_entries;
-	chunk_size = b.chunk_size;
 	num_entries = b.num_entries;
 
 	if ( max_entries )
@@ -42,6 +38,23 @@ BaseList::BaseList(BaseList& b)
 
 	for ( int i = 0; i < num_entries; ++i )
 		entry[i] = b.entry[i];
+	}
+
+BaseList::BaseList(BaseList&& b)
+	{
+	entry = b.entry;
+	num_entries = b.num_entries;
+	max_entries = b.max_entries;
+
+	b.entry = 0;
+	b.num_entries = b.max_entries = 0;
+	}
+
+BaseList::BaseList(const ent* arr, int n)
+	{
+	num_entries = max_entries = n;
+	entry = (ent*) safe_malloc(max_entries * sizeof(ent));
+	memcpy(entry, arr, n * sizeof(ent));
 	}
 
 void BaseList::sort(list_cmp_func cmp_func)
@@ -49,16 +62,14 @@ void BaseList::sort(list_cmp_func cmp_func)
 	qsort(entry, num_entries, sizeof(ent), cmp_func);
 	}
 
-void BaseList::operator=(BaseList& b)
+BaseList& BaseList::operator=(const BaseList& b)
 	{
 	if ( this == &b )
-		return;	// i.e., this already equals itself
+		return *this;
 
-	if ( entry )
-		free(entry);
+	free(entry);
 
 	max_entries = b.max_entries;
-	chunk_size = b.chunk_size;
 	num_entries = b.num_entries;
 
 	if ( max_entries )
@@ -68,15 +79,29 @@ void BaseList::operator=(BaseList& b)
 
 	for ( int i = 0; i < num_entries; ++i )
 		entry[i] = b.entry[i];
+
+	return *this;
+	}
+
+BaseList& BaseList::operator=(BaseList&& b)
+	{
+	if ( this == &b )
+		return *this;
+
+	free(entry);
+	entry = b.entry;
+	num_entries = b.num_entries;
+	max_entries = b.max_entries;
+
+	b.entry = 0;
+	b.num_entries = b.max_entries = 0;
+	return *this;
 	}
 
 void BaseList::insert(ent a)
 	{
 	if ( num_entries == max_entries )
-		{
-		resize(max_entries + chunk_size);	// make more room
-		chunk_size *= 2;
-		}
+		resize(max_entries ? max_entries * GROWTH_FACTOR : DEFAULT_LIST_SIZE);
 
 	for ( int i = num_entries; i > 0; --i )
 		entry[i] = entry[i-1];	// move all pointers up one
@@ -94,10 +119,7 @@ void BaseList::sortedinsert(ent a, list_cmp_func cmp_func)
 
 	// First append element.
 	if ( num_entries == max_entries )
-		{
-		resize(max_entries + chunk_size);
-		chunk_size *= 2;
-		}
+		resize(max_entries ? max_entries * GROWTH_FACTOR : DEFAULT_LIST_SIZE);
 
 	entry[num_entries++] = a;
 
@@ -141,10 +163,7 @@ ent BaseList::remove_nth(int n)
 void BaseList::append(ent a)
 	{
 	if ( num_entries == max_entries )
-		{
-		resize(max_entries + chunk_size);	// make more room
-		chunk_size *= 2;
-		}
+		resize(max_entries ? max_entries * GROWTH_FACTOR : DEFAULT_LIST_SIZE);
 
 	entry[num_entries++] = a;
 	}
@@ -161,14 +180,9 @@ ent BaseList::get()
 
 void BaseList::clear()
 	{
-	if ( entry )
-		{
-		free(entry);
-		entry = 0;
-		}
-
+	free(entry);
+	entry = 0;
 	num_entries = max_entries = 0;
-	chunk_size = DEFAULT_CHUNK_SIZE;
 	}
 
 ent BaseList::replace(int ent_index, ent new_ent)

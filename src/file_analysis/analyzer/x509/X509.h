@@ -79,13 +79,13 @@ public:
 	 *
 	 * @param cert_val The certificate to converts.
 	 *
-	 * @param fid A file ID associated with the certificate, if any
+	 * @param f A file associated with the certificate, if any
 	 * (primarily for error reporting).
 	 *
 	 * @param Returns the new record value and passes ownership to
 	 * caller.
 	 */
-	static RecordVal* ParseCertificate(X509Val* cert_val, const char* fid = 0);
+	static RecordVal* ParseCertificate(X509Val* cert_val, File* file = 0);
 
 	static file_analysis::Analyzer* Instantiate(RecordVal* args, File* file)
 		{ return new X509(args, file); }
@@ -122,6 +122,15 @@ public:
 	 * @return A newly initialized X509Val.
 	 */
 	explicit X509Val(::X509* certificate);
+
+	/**
+	 * Clone an X509Val
+	 *
+	 * @param state certifies the state of the clone operation (duplicate tracking)
+	 *
+	 * @return A cloned X509Val.
+	 */
+	Val* DoClone(CloneState* state) override;
 
 	/**
 	 * Destructor.

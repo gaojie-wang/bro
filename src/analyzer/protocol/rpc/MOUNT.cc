@@ -3,7 +3,7 @@
 #include <algorithm>
 #include <vector>
 
-#include "bro-config.h"
+#include "zeek-config.h"
 
 #include "NetVar.h"
 #include "XDR.h"
@@ -17,7 +17,7 @@ using namespace analyzer::rpc;
 int MOUNT_Interp::RPC_BuildCall(RPC_CallInfo* c, const u_char*& buf, int& n)
 	{
 	if ( c->Program() != 100005 )
-		Weird(fmt("bad_RPC_program (%d)", c->Program()));
+		Weird("bad_RPC_program", fmt("%d", c->Program()));
 
 	uint32 proc = c->Proc();
 	// The call arguments, depends on the call type obviously ...
@@ -49,7 +49,7 @@ int MOUNT_Interp::RPC_BuildCall(RPC_CallInfo* c, const u_char*& buf, int& n)
 			n = 0;
 			}
 		else
-			Weird(fmt("unknown_MOUNT_request(%u)", proc));
+			Weird("unknown_MOUNT_request", fmt("%u", proc));
 
 		// Return 1 so that replies to unprocessed calls will still
 		// be processed, and the return status extracted.
@@ -93,9 +93,9 @@ int MOUNT_Interp::RPC_BuildReply(RPC_CallInfo* c, BifEnum::rpc_status rpc_status
 
 	if ( mount_reply_status )
 		{
-		val_list* vl = event_common_vl(c, rpc_status, mount_status,
-					   start_time, last_time, reply_len);
-		analyzer->ConnectionEvent(mount_reply_status, vl);
+		auto vl = event_common_vl(c, rpc_status, mount_status,
+					   start_time, last_time, reply_len, 0);
+		analyzer->ConnectionEventFast(mount_reply_status, std::move(vl));
 		}
 
 	if ( ! rpc_success )
@@ -162,34 +162,34 @@ int MOUNT_Interp::RPC_BuildReply(RPC_CallInfo* c, BifEnum::rpc_status rpc_status
 	// optional and all are set to 0 ...
 	if ( event )
 		{
-		val_list* vl = event_common_vl(c, rpc_status, mount_status,
-					start_time, last_time, reply_len);
-
 		Val *request = c->TakeRequestVal();
 
+		auto vl = event_common_vl(c, rpc_status, mount_status,
+					start_time, last_time, reply_len, (bool)request + (bool)reply);
+
 		if ( request )
-			vl->append(request);
+			vl.append(request);
 
 		if ( reply )
-			vl->append(reply);
+			vl.append(reply);
 
-		analyzer->ConnectionEvent(event, vl);
+		analyzer->ConnectionEventFast(event, std::move(vl));
 		}
 	else
 		Unref(reply);
 	return 1;
 	}
 
-val_list* MOUNT_Interp::event_common_vl(RPC_CallInfo *c, 
+val_list MOUNT_Interp::event_common_vl(RPC_CallInfo *c, 
 		      BifEnum::rpc_status rpc_status,
 				      BifEnum::MOUNT3::status_t mount_status,
 				      double rep_start_time,
-				      double rep_last_time, int reply_len)
+				      double rep_last_time, int reply_len, int extra_elements)
 	{
 	// Returns a new val_list that already has a conn_val, and mount3_info.
 	// These are the first parameters for each mount_* event ...
-	val_list *vl = new val_list;
-	vl->append(analyzer->BuildConnVal());
+	val_list vl(2 + extra_elements);
+	vl.append(analyzer->BuildConnVal());
 	VectorVal* auxgids = new VectorVal(internal_type("index_vec")->AsVectorType());
 
 	for (size_t i = 0; i < c->AuxGIDs().size(); ++i)
@@ -212,7 +212,7 @@ val_list* MOUNT_Interp::event_common_vl(RPC_CallInfo *c,
 	info->Assign(11, new StringVal(c->MachineName()));
 	info->Assign(12, auxgids);
 
-	vl->append(info);
+	vl.append(info);
 	return vl;
 	}
 

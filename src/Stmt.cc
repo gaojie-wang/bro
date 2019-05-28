@@ -1,6 +1,6 @@
 // See the file "COPYING" in the main distribution directory for copyright.
 
-#include "bro-config.h"
+#include "zeek-config.h"
 
 #include "Expr.h"
 #include "Event.h"
@@ -14,7 +14,6 @@
 #include "Debug.h"
 #include "Traverse.h"
 #include "Trigger.h"
-#include "RemoteSerializer.h"
 
 const char* stmt_name(BroStmtTag t)
 	{
@@ -292,17 +291,15 @@ Val* PrintStmt::DoExec(val_list* vals, stmt_flow_type& /* flow */) const
 
 		if ( print_hook )
 			{
-			val_list* vl = new val_list(2);
 			::Ref(f);
-			vl->append(new Val(f));
-			vl->append(new StringVal(d.Len(), d.Description()));
 
 			// Note, this doesn't do remote printing.
-			mgr.Dispatch(new Event(print_hook, vl), true);
+			mgr.Dispatch(
+			    new Event(
+			        print_hook,
+			        {new Val(f), new StringVal(d.Len(), d.Description())}),
+			    true);
 			}
-
-		if ( remote_serializer )
-			remote_serializer->SendPrintHookEvent(f, d.Description(), d.Len());
 		}
 
 	return 0;
@@ -704,7 +701,7 @@ bool Case::DoUnserialize(UnserialInfo* info)
 	if ( ! UNSERIALIZE(&len) )
 		return false;
 
-	type_cases = new id_list;
+	type_cases = new id_list(len);
 
 	while ( len-- )
 		{
@@ -1198,7 +1195,10 @@ Val* EventStmt::Exec(Frame* f, stmt_flow_type& flow) const
 	val_list* args = eval_list(f, event_expr->Args());
 
 	if ( args )
-		mgr.QueueEvent(event_expr->Handler(), args);
+		{
+		mgr.QueueEvent(event_expr->Handler(), std::move(*args));
+		delete args;
+		}
 
 	flow = FLOW_NEXT;
 
@@ -1421,12 +1421,38 @@ ForStmt::ForStmt(id_list* arg_loop_vars, Expr* loop_expr)
 		e->Error("target to iterate over must be a table, set, vector, or string");
 	}
 
+ForStmt::ForStmt(id_list* arg_loop_vars, Expr* loop_expr, ID* val_var)
+	: ForStmt(arg_loop_vars, loop_expr)
+	{
+	value_var = val_var;
+
+	if ( e->Type()->IsTable() )
+		{
+		BroType* yield_type = e->Type()->AsTableType()->YieldType();
+
+		// Verify value_vars type if its already been defined
+		if ( value_var->Type() )
+			{
+			if ( ! same_type(value_var->Type(), yield_type) )
+				value_var->Type()->Error("type clash in iteration", yield_type);
+			}
+		else
+			{
+			delete add_local(value_var, yield_type->Ref(), INIT_NONE,
+			                 0, 0, VAR_REGULAR);
+			}
+		}
+	else
+		e->Error("key value for loops only support iteration over tables");
+	}
+
 ForStmt::~ForStmt()
 	{
 	loop_over_list(*loop_vars, i)
 		Unref((*loop_vars)[i]);
 	delete loop_vars;
 
+	Unref(value_var);
 	Unref(body);
 	}
 
@@ -1443,11 +1469,15 @@ Val* ForStmt::DoExec(Frame* f, Val* v, stmt_flow_type& flow) const
 			return 0;
 
 		HashKey* k;
+		TableEntryVal* current_tev;
 		IterCookie* c = loop_vals->InitForIteration();
-		while ( loop_vals->NextEntry(k, c) )
+		while ( (current_tev = loop_vals->NextEntry(k, c)) )
 			{
 			ListVal* ind_lv = tv->RecoverIndex(k);
 			delete k;
+
+			if ( value_var )
+				f->SetElement(value_var->Offset(), current_tev->Value()->Ref());
 
 			for ( int i = 0; i < ind_lv->Length(); i++ )
 				f->SetElement((*loop_vars)[i]->Offset(), ind_lv->Index(i)->Ref());
@@ -1603,7 +1633,7 @@ bool ForStmt::DoUnserialize(UnserialInfo* info)
 	if ( ! UNSERIALIZE(&len) )
 		return false;
 
-	loop_vars = new id_list;
+	loop_vars = new id_list(len);
 
 	while ( len-- )
 		{
@@ -2119,7 +2149,7 @@ bool InitStmt::DoUnserialize(UnserialInfo* info)
 	if ( ! UNSERIALIZE(&len) )
 		return false;
 
-	inits = new id_list;
+	inits = new id_list(len);
 
 	while ( len-- )
 		{

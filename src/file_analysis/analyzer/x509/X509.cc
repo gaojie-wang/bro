@@ -47,21 +47,21 @@ bool file_analysis::X509::EndOfFile()
 	::X509* ssl_cert = d2i_X509(NULL, &cert_char, cert_data.size());
 	if ( ! ssl_cert )
 		{
-		reporter->Weird(fmt("Could not parse X509 certificate (fuid %s)", GetFile()->GetID().c_str()));
+		reporter->Weird(GetFile(), "x509_cert_parse_error");
 		return false;
 		}
 
 	X509Val* cert_val = new X509Val(ssl_cert); // cert_val takes ownership of ssl_cert
 
 	// parse basic information into record.
-	RecordVal* cert_record = ParseCertificate(cert_val, GetFile()->GetID().c_str());
+	RecordVal* cert_record = ParseCertificate(cert_val, GetFile());
 
 	// and send the record on to scriptland
-	val_list* vl = new val_list();
-	vl->append(GetFile()->GetVal()->Ref());
-	vl->append(cert_val->Ref());
-	vl->append(cert_record->Ref()); // we Ref it here, because we want to keep a copy around for now...
-	mgr.QueueEvent(x509_certificate, vl);
+	mgr.QueueEvent(x509_certificate, {
+		GetFile()->GetVal()->Ref(),
+		cert_val->Ref(),
+		cert_record->Ref(), // we Ref it here, because we want to keep a copy around for now...
+	});
 
 	// after parsing the certificate - parse the extensions...
 
@@ -86,7 +86,7 @@ bool file_analysis::X509::EndOfFile()
 	return false;
 	}
 
-RecordVal* file_analysis::X509::ParseCertificate(X509Val* cert_val, const char* fid)
+RecordVal* file_analysis::X509::ParseCertificate(X509Val* cert_val, File* f)
 	{
 	::X509* ssl_cert = cert_val->GetCertificate();
 
@@ -133,8 +133,8 @@ RecordVal* file_analysis::X509::ParseCertificate(X509Val* cert_val, const char* 
 	pX509Cert->Assign(3, new StringVal(len, buf));
 	BIO_free(bio);
 
-	pX509Cert->Assign(5, new Val(GetTimeFromAsn1(X509_get_notBefore(ssl_cert), fid, reporter), TYPE_TIME));
-	pX509Cert->Assign(6, new Val(GetTimeFromAsn1(X509_get_notAfter(ssl_cert), fid, reporter), TYPE_TIME));
+	pX509Cert->Assign(5, new Val(GetTimeFromAsn1(X509_get_notBefore(ssl_cert), f, reporter), TYPE_TIME));
+	pX509Cert->Assign(6, new Val(GetTimeFromAsn1(X509_get_notAfter(ssl_cert), f, reporter), TYPE_TIME));
 
 	// we only read 255 bytes because byte 256 is always 0.
 	// if the string is longer than 255, that will be our null-termination,
@@ -221,22 +221,25 @@ void file_analysis::X509::ParseBasicConstraints(X509_EXTENSION* ex)
 
 	if ( constr )
 		{
-		RecordVal* pBasicConstraint = new RecordVal(BifType::Record::X509::BasicConstraints);
-		pBasicConstraint->Assign(0, val_mgr->GetBool(constr->ca ? 1 : 0));
+		if ( x509_ext_basic_constraints )
+			{
+			RecordVal* pBasicConstraint = new RecordVal(BifType::Record::X509::BasicConstraints);
+			pBasicConstraint->Assign(0, val_mgr->GetBool(constr->ca ? 1 : 0));
 
-		if ( constr->pathlen )
-			pBasicConstraint->Assign(1, val_mgr->GetCount((int32_t) ASN1_INTEGER_get(constr->pathlen)));
+			if ( constr->pathlen )
+				pBasicConstraint->Assign(1, val_mgr->GetCount((int32_t) ASN1_INTEGER_get(constr->pathlen)));
 
-		val_list* vl = new val_list();
-		vl->append(GetFile()->GetVal()->Ref());
-		vl->append(pBasicConstraint);
+			mgr.QueueEventFast(x509_ext_basic_constraints, {
+				GetFile()->GetVal()->Ref(),
+				pBasicConstraint,
+			});
+			}
 
-		mgr.QueueEvent(x509_ext_basic_constraints, vl);
 		BASIC_CONSTRAINTS_free(constr);
 		}
 
 	else
-		reporter->Weird(fmt("Certificate with invalid BasicConstraint. fuid %s", GetFile()->GetID().c_str()));
+		reporter->Weird(GetFile(), "x509_invalid_basic_constraint");
 	}
 
 void file_analysis::X509::ParseExtensionsSpecific(X509_EXTENSION* ex, bool global, ASN1_OBJECT* ext_asn, const char* oid)
@@ -266,7 +269,7 @@ void file_analysis::X509::ParseSAN(X509_EXTENSION* ext)
 	GENERAL_NAMES *altname = (GENERAL_NAMES*)X509V3_EXT_d2i(ext);
 	if ( ! altname )
 		{
-		reporter->Weird(fmt("Could not parse subject alternative names. fuid %s", GetFile()->GetID().c_str()));
+		reporter->Weird(GetFile(), "x509_san_parse_error");
 		return;
 		}
 
@@ -286,7 +289,7 @@ void file_analysis::X509::ParseSAN(X509_EXTENSION* ext)
 			{
 			if ( ASN1_STRING_type(gen->d.ia5) != V_ASN1_IA5STRING )
 				{
-				reporter->Weird(fmt("DNS-field does not contain an IA5String. fuid %s", GetFile()->GetID().c_str()));
+				reporter->Weird(GetFile(), "x509_san_non_string");
 				continue;
 				}
 
@@ -337,7 +340,7 @@ void file_analysis::X509::ParseSAN(X509_EXTENSION* ext)
 
 				else
 					{
-					reporter->Weird(fmt("Weird IP address length %d in subject alternative name. fuid %s", gen->d.ip->length, GetFile()->GetID().c_str()));
+					reporter->Weird(GetFile(), "x509_san_ip_length", fmt("%d", gen->d.ip->length));
 					continue;
 					}
 			}
@@ -367,10 +370,10 @@ void file_analysis::X509::ParseSAN(X509_EXTENSION* ext)
 
 		sanExt->Assign(4, val_mgr->GetBool(otherfields));
 
-		val_list* vl = new val_list();
-		vl->append(GetFile()->GetVal()->Ref());
-		vl->append(sanExt);
-		mgr.QueueEvent(x509_ext_subject_alternative_name, vl);
+		mgr.QueueEvent(x509_ext_subject_alternative_name, {
+			GetFile()->GetVal()->Ref(),
+			sanExt,
+		});
 	GENERAL_NAMES_free(altname);
 	}
 
@@ -472,6 +475,15 @@ X509Val::~X509Val()
 	{
 	if ( certificate )
 		X509_free(certificate);
+	}
+
+Val* X509Val::DoClone(CloneState* state)
+	{
+	auto copy = new X509Val();
+	if ( certificate )
+		copy->certificate = X509_dup(certificate);
+
+	return copy;
 	}
 
 ::X509* X509Val::GetCertificate() const

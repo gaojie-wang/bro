@@ -210,6 +210,10 @@ protected:
 	// TYPE_ERROR.
 	void ExprError(const char msg[]);
 
+	void RuntimeError(const std::string& msg) const;
+
+	void RuntimeErrorWithCallStack(const std::string& msg) const;
+
 	DECLARE_ABSTRACT_SERIAL(Expr);
 
 	BroExprTag tag;
@@ -933,7 +937,7 @@ public:
 
 protected:
 	EventHandlerPtr event;
-	val_list* args;
+	val_list args;
 	TimerMgr* tmgr;
 };
 

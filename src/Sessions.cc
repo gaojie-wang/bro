@@ -1,7 +1,7 @@
 // See the file "COPYING" in the main distribution directory for copyright.
 
 
-#include "bro-config.h"
+#include "zeek-config.h"
 
 #include <arpa/inet.h>
 
@@ -171,11 +171,7 @@ void NetSessions::NextPacket(double t, const Packet* pkt)
 	SegmentProfiler(segment_logger, "dispatching-packet");
 
 	if ( raw_packet )
-		{
-		val_list* vl = new val_list();
-		vl->append(pkt->BuildPktHdrVal());
-		mgr.QueueEvent(raw_packet, vl);
-		}
+		mgr.QueueEventFast(raw_packet, {pkt->BuildPktHdrVal()});
 
 	if ( pkt_profiler )
 		pkt_profiler->ProfilePkt(t, pkt->cap_len);
@@ -415,11 +411,7 @@ void NetSessions::DoNextPacket(double t, const Packet* pkt, const IP_Hdr* ip_hdr
 		{
 		dump_this_packet = 1;
 		if ( esp_packet )
-			{
-			val_list* vl = new val_list();
-			vl->append(ip_hdr->BuildPktHdrVal());
-			mgr.QueueEvent(esp_packet, vl);
-			}
+			mgr.QueueEventFast(esp_packet, {ip_hdr->BuildPktHdrVal()});
 
 		// Can't do more since upper-layer payloads are going to be encrypted.
 		return;
@@ -439,11 +431,7 @@ void NetSessions::DoNextPacket(double t, const Packet* pkt, const IP_Hdr* ip_hdr
 			}
 
 		if ( mobile_ipv6_message )
-			{
-			val_list* vl = new val_list();
-			vl->append(ip_hdr->BuildPktHdrVal());
-			mgr.QueueEvent(mobile_ipv6_message, vl);
-			}
+			mgr.QueueEvent(mobile_ipv6_message, {ip_hdr->BuildPktHdrVal()});
 
 		if ( ip_hdr->NextProto() != IPPROTO_NONE )
 			Weird("mobility_piggyback", pkt, encapsulation);
@@ -537,8 +525,7 @@ void NetSessions::DoNextPacket(double t, const Packet* pkt, const IP_Hdr* ip_hdr
 
 		if ( gre_version != 0 && gre_version != 1 )
 			{
-			Weird(fmt("unknown_gre_version_%d", gre_version), ip_hdr,
-			      encapsulation);
+			Weird("unknown_gre_version", ip_hdr, encapsulation);
 			return;
 			}
 
@@ -613,8 +600,7 @@ void NetSessions::DoNextPacket(double t, const Packet* pkt, const IP_Hdr* ip_hdr
 			else
 				{
 				// Not IPv4/IPv6 payload.
-				Weird(fmt("unknown_gre_protocol_%" PRIu16, proto_typ), ip_hdr,
-				      encapsulation);
+				Weird("unknown_gre_protocol", ip_hdr, encapsulation);
 				return;
 				}
 
@@ -747,7 +733,7 @@ void NetSessions::DoNextPacket(double t, const Packet* pkt, const IP_Hdr* ip_hdr
 		}
 
 	default:
-		Weird(fmt("unknown_protocol_%d", proto), pkt, encapsulation);
+		Weird("unknown_protocol", pkt, encapsulation);
 		return;
 	}
 
@@ -1115,9 +1101,6 @@ void NetSessions::Remove(Connection* c)
 			tcp_stats.StateLeft(to->state, tr->state);
 			}
 
-		if ( c->IsPersistent() )
-			persistence_serializer->Unregister(c);
-
 		c->Done();
 
 		if ( connection_state_remove )
@@ -1208,8 +1191,6 @@ void NetSessions::Insert(Connection* c)
 		// Some clean-ups similar to those in Remove() (but invisible
 		// to the script layer).
 		old->CancelTimers();
-		if ( old->IsPersistent() )
-			persistence_serializer->Unregister(old);
 		delete old->Key();
 		old->ClearKey();
 		Unref(old);
@@ -1329,12 +1310,12 @@ Connection* NetSessions::NewConn(HashKey* k, double t, const ConnID* id,
 		{
 		conn->Event(new_connection, 0);
 
-		if ( external )
+		if ( external && connection_external )
 			{
-			val_list* vl = new val_list(2);
-			vl->append(conn->BuildConnVal());
-			vl->append(new StringVal(conn->GetTimerMgr()->GetTag().c_str()));
-			conn->ConnectionEvent(connection_external, 0, vl);
+			conn->ConnectionEventFast(connection_external, 0, {
+				conn->BuildConnVal(),
+				new StringVal(conn->GetTimerMgr()->GetTag().c_str()),
+			});
 			}
 		}
 

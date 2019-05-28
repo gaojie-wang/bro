@@ -1,12 +1,12 @@
 # This tests a normal OCSP request sent through HTTP GET
 
-# @TEST-EXEC: bro -C -r $TRACES/tls/ocsp-http-get.pcap %INPUT
+# @TEST-EXEC: zeek -C -r $TRACES/tls/ocsp-http-get.pcap %INPUT
 # @TEST-EXEC: btest-diff ocsp.log
 # @TEST-EXEC: btest-diff .stdout
 
 @load files/x509/log-ocsp
 
-event bro_init()
+event zeek_init()
 	{
 	Files::register_for_mime_type(Files::ANALYZER_OCSP_REQUEST, "application/ocsp-request");
 	Files::register_for_mime_type(Files::ANALYZER_OCSP_REPLY, "application/ocsp-response");

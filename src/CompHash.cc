@@ -1,11 +1,14 @@
 // See the file "COPYING" in the main distribution directory for copyright.
 
-#include "bro-config.h"
+#include "zeek-config.h"
 
 #include "CompHash.h"
 #include "Val.h"
 #include "Reporter.h"
 #include "Func.h"
+
+#include <vector>
+#include <map>
 
 CompositeHash::CompositeHash(TypeList* composite_type)
 	{
@@ -174,12 +177,44 @@ char* CompositeHash::SingleValHash(int type_check, char* kp0,
 			{
 			int* kp = AlignAndPadType<int>(kp0);
 			TableVal* tv = v->AsTableVal();
-			ListVal* lv = tv->ConvertToList();
 			*kp = tv->Size();
 			kp1 = reinterpret_cast<char*>(kp+1);
-			for ( int i = 0; i < tv->Size(); ++i )
+
+			auto tbl = tv->AsTable();
+			auto it = tbl->InitForIteration();
+			ListVal* lv = new ListVal(TYPE_ANY);
+
+			struct HashKeyComparer {
+				bool operator()(const HashKey* a, const HashKey* b) const
+					{
+					if ( a->Hash() != b->Hash() )
+						return a->Hash() < b->Hash();
+					if ( a->Size() != b->Size() )
+						return a->Size() < b->Size();
+					return strncmp(static_cast<const char*>(a->Key()),
+					               static_cast<const char*>(b->Key()),
+					               a->Size()) < 0;
+					}
+			};
+
+			std::map<HashKey*, int, HashKeyComparer> hashkeys;
+			HashKey* k;
+			auto idx = 0;
+
+			while ( tbl->NextEntry(k, it) )
 				{
-				Val* key = lv->Index(i);
+				hashkeys[k] = idx++;
+				lv->Append(tv->RecoverIndex(k));
+				}
+
+			for ( auto& kv : hashkeys )
+				delete kv.first;
+
+			for ( auto& kv : hashkeys )
+				{
+				auto idx = kv.second;
+				Val* key = lv->Index(idx);
+
 				if ( ! (kp1 = SingleValHash(type_check, kp1, key->Type(), key,
 				                            false)) )
 					{
@@ -642,7 +677,7 @@ ListVal* CompositeHash::RecoverVals(const HashKey* k) const
 
 	loop_over_list(*tl, i)
 		{
-		Val* v;
+		Val* v = nullptr;
 		kp = RecoverOneVal(k, kp, k_end, (*tl)[i], v, false);
 		ASSERT(v);
 		l->Append(v);

@@ -13,6 +13,7 @@
 #include "Tag.h"
 #include "AnalyzerSet.h"
 #include "BroString.h"
+#include "WeirdState.h"
 
 namespace file_analysis {
 
@@ -171,6 +172,12 @@ public:
 	 */
 	void FileEvent(EventHandlerPtr h, val_list* vl);
 
+	/**
+	 * Raises an event related to the file's life-cycle.
+	 * @param h pointer to an event handler.
+	 * @param vl list of argument values to pass to event call.
+	 */
+	void FileEvent(EventHandlerPtr h, val_list vl);
 
 	/**
 	 * Sets the MIME type for a file to a specific value.
@@ -191,6 +198,13 @@ public:
 	 *         a mime type was already set or inferred.
 	 */
 	bool SetMime(const string& mime_type);
+
+	/**
+	 * Whether to permit a weird to carry on through the full reporter/weird
+	 * framework.
+	 */
+	bool PermitWeird(const char* name, uint64 threshold, uint64 rate,
+	                 double duration);
 
 protected:
 	friend class Manager;
@@ -324,6 +338,8 @@ protected:
 		uint64 size;
 		BroString::CVec chunks;
 	} bof_buffer;              /**< Beginning of file buffer. */
+
+	WeirdStateMap weird_state;
 
 	static int id_idx;
 	static int parent_id_idx;

@@ -3,7 +3,7 @@
 #ifndef TUNNELS_H
 #define TUNNELS_H
 
-#include "bro-config.h"
+#include "zeek-config.h"
 #include "NetVar.h"
 #include "IPAddr.h"
 #include "Val.h"
@@ -91,6 +91,14 @@ public:
 		     ec1.type == BifEnum::Tunnel::GRE )
 			// Reversing endpoints is still same tunnel.
 			return ec1.uid == ec2.uid && ec1.proto == ec2.proto &&
+			  ((ec1.src_addr == ec2.src_addr && ec1.dst_addr == ec2.dst_addr) ||
+			   (ec1.src_addr == ec2.dst_addr && ec1.dst_addr == ec2.src_addr));
+
+		if ( ec1.type == BifEnum::Tunnel::VXLAN )
+			// Reversing endpoints is still same tunnel, destination port is
+			// always the same.
+			return ec1.dst_port == ec2.dst_port &&
+			       ec1.uid == ec2.uid && ec1.proto == ec2.proto &&
 			  ((ec1.src_addr == ec2.src_addr && ec1.dst_addr == ec2.dst_addr) ||
 			   (ec1.src_addr == ec2.dst_addr && ec1.dst_addr == ec2.src_addr));
 

@@ -17,6 +17,7 @@
 #include "IPAddr.h"
 
 namespace analyzer { class Analyzer; }
+namespace file_analysis { class File; }
 class Connection;
 class Location;
 class Reporter;
@@ -84,6 +85,7 @@ public:
 	// Report a traffic weirdness, i.e., an unexpected protocol situation
 	// that may lead to incorrectly processing a connnection.
 	void Weird(const char* name);	// Raises net_weird().
+	void Weird(file_analysis::File* f, const char* name, const char* addl = "");	// Raises file_weird().
 	void Weird(Connection* conn, const char* name, const char* addl = "");	// Raises conn_weird().
 	void Weird(const IPAddr& orig, const IPAddr& resp, const char* name);	// Raises flow_weird().
 
@@ -231,6 +233,13 @@ public:
 		this->weird_sampling_duration = weird_sampling_duration;
 		}
 
+	/**
+	 * Called after zeek_init() and toggles whether messages may stop being
+	 * emitted to stderr.
+	 */
+	void ZeekInitDone()
+		{ after_zeek_init = true; }
+
 private:
 	void DoLog(const char* prefix, EventHandlerPtr event, FILE* out,
 		   Connection* conn, val_list* addl, bool location, bool time,
@@ -238,7 +247,7 @@ private:
 
 	// The order if addl, name needs to be like that since fmt_name can
 	// contain format specifiers
-	void WeirdHelper(EventHandlerPtr event, Val* conn_val, const char* addl, const char* fmt_name, ...) __attribute__((format(printf, 5, 6)));;
+	void WeirdHelper(EventHandlerPtr event, Val* conn_val, file_analysis::File* f, const char* addl, const char* fmt_name, ...) __attribute__((format(printf, 6, 7)));;
 	void WeirdFlowHelper(const IPAddr& orig, const IPAddr& resp, const char* fmt_name, ...) __attribute__((format(printf, 4, 5)));;
 	void UpdateWeirdStats(const char* name);
 	inline bool WeirdOnSamplingWhiteList(const char* name)
@@ -246,12 +255,16 @@ private:
 	bool PermitNetWeird(const char* name);
 	bool PermitFlowWeird(const char* name, const IPAddr& o, const IPAddr& r);
 
+	bool EmitToStderr(bool flag)
+		{ return flag || ! after_zeek_init; }
+
 	int errors;
 	bool via_events;
 	int in_error_handler;
 	bool info_to_stderr;
 	bool warnings_to_stderr;
 	bool errors_to_stderr;
+	bool after_zeek_init;
 
 	std::list<std::pair<const Location*, const Location*> > locations;
 

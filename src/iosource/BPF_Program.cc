@@ -1,6 +1,6 @@
 // See the file "COPYING" in the main distribution directory for copyright.
 
-#include "bro-config.h"
+#include "zeek-config.h"
 
 #include "util.h"
 #include "BPF_Program.h"
@@ -103,6 +103,17 @@ bool BPF_Program::Compile(int snaplen, int linktype, const char* filter,
 			  bool optimize)
 	{
 	FreeCode();
+
+	if ( linktype == DLT_NFLOG )
+		{
+		// No-op, NFLOG does not support BPF filters.
+		// Raising a warning might be good, but it would also be noisy
+		// since the default scripts will always attempt to compile
+		// and install a default filter
+		m_compiled = true;
+		m_matches_anything = true;
+		return true;
+		}
 
 #ifdef LIBPCAP_PCAP_COMPILE_NOPCAP_HAS_ERROR_PARAMETER
 	char my_error[PCAP_ERRBUF_SIZE];

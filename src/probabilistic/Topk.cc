@@ -78,6 +78,13 @@ TopkVal::~TopkVal()
 
 void TopkVal::Merge(const TopkVal* value, bool doPrune)
 	{
+	if ( ! value->type )
+		{
+		// Merge-from is empty. Nothing to do.
+		assert(value->numElements == 0);
+		return;
+		}
+
 	if ( type == 0 )
 		{
 		assert(numElements == 0);
@@ -174,6 +181,13 @@ void TopkVal::Merge(const TopkVal* value, bool doPrune)
 
 		numElements--;
 		}
+	}
+
+Val* TopkVal::DoClone(CloneState* state)
+	{
+	auto clone = new TopkVal(size);
+	clone->Merge(this);
+	return clone;
 	}
 
 bool TopkVal::DoSerialize(SerialInfo* info) const

@@ -101,38 +101,44 @@ void IPAddr::ReverseMask(int top_bits_to_chop)
 		p[i] &= mask_bits[i];
 	}
 
-void IPAddr::Init(const std::string& s)
+bool IPAddr::ConvertString(const char* s, in6_addr* result)
 	{
-	if ( s.find(':') == std::string::npos ) // IPv4.
+	for ( auto p = s; *p; ++p )
+		if ( *p == ':' )
+			// IPv6
+			return (inet_pton(AF_INET6, s, result->s6_addr) == 1);
+
+	// IPv4
+	// Parse the address directly instead of using inet_pton since
+	// some platforms have more sensitive implementations than others
+	// that can't e.g. handle leading zeroes.
+	int a[4];
+	int n = 0;
+	int match_count = sscanf(s, "%d.%d.%d.%d%n", a+0, a+1, a+2, a+3, &n);
+
+	if ( match_count != 4 )
+		return false;
+
+	if ( s[n] != '\0' )
+		return false;
+
+	for ( auto i = 0; i < 4; ++i )
+		if ( a[i] < 0 || a[i] > 255 )
+			return false;
+
+	uint32_t addr = (a[0] << 24) | (a[1] << 16) | (a[2] << 8) | a[3];
+	addr = htonl(addr);
+	memcpy(result->s6_addr, v4_mapped_prefix, sizeof(v4_mapped_prefix));
+	memcpy(&result->s6_addr[12], &addr, sizeof(uint32_t));
+	return true;
+	}
+
+void IPAddr::Init(const char* s)
+	{
+	if ( ! ConvertString(s, &in6) )
 		{
-		memcpy(in6.s6_addr, v4_mapped_prefix, sizeof(v4_mapped_prefix));
-
-		// Parse the address directly instead of using inet_pton since
-		// some platforms have more sensitive implementations than others
-		// that can't e.g. handle leading zeroes.
-		int a[4];
-		int n = sscanf(s.c_str(), "%d.%d.%d.%d", a+0, a+1, a+2, a+3);
-
-		if ( n != 4 || a[0] < 0 || a[1] < 0 || a[2] < 0 || a[3] < 0 ||
-		     a[0] > 255 || a[1] > 255 || a[2] > 255 || a[3] > 255 )
-			{
-			reporter->Error("Bad IP address: %s", s.c_str());
-			memset(in6.s6_addr, 0, sizeof(in6.s6_addr));
-			return;
-			}
-
-		uint32_t addr = (a[0] << 24) | (a[1] << 16) | (a[2] << 8) | a[3];
-		addr = htonl(addr);
-		memcpy(&in6.s6_addr[12], &addr, sizeof(uint32_t));
-		}
-
-	else
-		{
-		if ( inet_pton(AF_INET6, s.c_str(), in6.s6_addr) <=0 )
-			{
-			reporter->Error("Bad IP address: %s", s.c_str());
-			memset(in6.s6_addr, 0, sizeof(in6.s6_addr));
-			}
+		reporter->Error("Bad IP address: %s", s);
+		memset(in6.s6_addr, 0, sizeof(in6.s6_addr));
 		}
 	}
 
@@ -216,7 +222,10 @@ IPPrefix::IPPrefix(const in4_addr& in4, uint8_t length)
 	: prefix(in4), length(96 + length)
 	{
 	if ( length > 32 )
-		reporter->InternalError("Bad in4_addr IPPrefix length : %d", length);
+		{
+		reporter->Error("Bad in4_addr IPPrefix length : %d", length);
+		this->length = 0;
+		}
 
 	prefix.Mask(this->length);
 	}
@@ -225,7 +234,10 @@ IPPrefix::IPPrefix(const in6_addr& in6, uint8_t length)
 	: prefix(in6), length(length)
 	{
 	if ( length > 128 )
-		reporter->InternalError("Bad in6_addr IPPrefix length : %d", length);
+		{
+		reporter->Error("Bad in6_addr IPPrefix length : %d", length);
+		this->length = 0;
+		}
 
 	prefix.Mask(this->length);
 	}
@@ -236,19 +248,23 @@ IPPrefix::IPPrefix(const IPAddr& addr, uint8_t length, bool len_is_v6_relative)
 	if ( prefix.GetFamily() == IPv4 && ! len_is_v6_relative )
 		{
 		if ( length > 32 )
-			reporter->InternalError("Bad IPAddr(v4) IPPrefix length : %d",
-			                        length);
-
-		this->length = length + 96;
+			{
+			reporter->Error("Bad IPAddr(v4) IPPrefix length : %d", length);
+			this->length = 0;
+			}
+		else
+			this->length = length + 96;
 		}
 
 	else
 		{
 		if ( length > 128 )
-			reporter->InternalError("Bad IPAddr(v6) IPPrefix length : %d",
-			                        length);
-
-		this->length = length;
+			{
+			reporter->Error("Bad IPAddr(v6) IPPrefix length : %d", length);
+			this->length = 0;
+			}
+		else
+			this->length = length;
 		}
 
 	prefix.Mask(this->length);
